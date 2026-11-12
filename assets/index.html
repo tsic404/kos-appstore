@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>应用中心</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <h1>应用中心</h1>
+      <p class="hint" id="status" role="status">正在连接控制台…</p>
+    </header>
+    <main class="layout">
+      <section class="list" aria-label="可安装条目">
+        <h2>可安装条目</h2>
+        <ul id="entries"></ul>
+        <p class="empty" id="entries-empty" hidden>目录暂无可安装条目。</p>
+      </section>
+      <section class="detail" aria-label="条目详情">
+        <h2>条目详情</h2>
+        <div id="detail"><p class="empty">选择一个条目查看版本、依赖、参数结构与摘要。</p></div>
+      </section>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

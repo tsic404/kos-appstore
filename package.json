@@ -1,0 +1,10 @@
+{
+  "name": "kos-appstore-window",
+  "private": true,
+  "type": "module",
+  "description": "应用中心窗口的浏览器资产：ES 模块原样分发，无构建步骤、无运行时依赖。",
+  "scripts": {
+    "check": "node --check assets/app.js",
+    "test": "node --test tests/acceptance/*/*.test.js"
+  }
+}
