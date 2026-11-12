@@ -10,6 +10,7 @@ import test from "node:test";
 
 import { createAppCenter } from "../../../assets/app.js";
 import {
+  appCenterPage,
   fakeDocument,
   fakeElement,
   fakeFetch,
@@ -44,9 +45,10 @@ const redis = {
   definition: "redis",
   installable: true,
   dependencies: [],
+  permissions: [],
   config: [
-    { name: "replicas", type: "integer", default: "1", minimum: "1", maximum: "5", description: "副本数" },
-    { name: "password", type: "string", required: true, sensitive: true },
+    { name: "replicas", type: "integer", control: "number", default: "1", minimum: "1", maximum: "5", description: "副本数" },
+    { name: "password", type: "string", control: "text", required: true, sensitive: true },
   ],
 };
 
@@ -63,20 +65,22 @@ const hub = {
   reason: "缺少必需能力 notify",
   missing: ["notify"],
   dependencies: [{ name: "notify", version: ">=1.0" }],
+  permissions: [],
   config: [],
 };
 
-// start mounts the window against one catalogue answer.
+// start mounts the window against one app-center page answer.
 function start(entries) {
   const document = fakeDocument({
     status: fakeElement("p"),
     entries: fakeElement("ul"),
     "entries-empty": fakeElement("p"),
     detail: fakeElement("div"),
+    install: fakeElement("div"),
   });
   const window = fakeWindow(address("kos-console=" + encodeURIComponent(consoleOrigin) + "&kos-window=w-1"));
   const network = fakeFetch({
-    ["GET " + consoleOrigin + "/api/v1/catalogue/entries"]: { status: 200, body: { items: entries } },
+    ["GET " + consoleOrigin + "/api/v1/pages/app-center"]: { status: 200, body: appCenterPage(entries) },
   });
   const clock = fakeIntervals();
   createAppCenter({

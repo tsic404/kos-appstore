@@ -117,3 +117,105 @@ h2 {
   color: var(--muted);
   font-size: 13px;
 }
+
+button {
+  font: inherit;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: Canvas;
+  color: inherit;
+  cursor: pointer;
+}
+
+button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.install {
+  margin-top: 24px;
+}
+
+.install h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0;
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.field .hint {
+  margin-left: 8px;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field input,
+.field select {
+  max-width: 320px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: Canvas;
+  color: inherit;
+  font: inherit;
+}
+
+.field [aria-invalid="true"] {
+  border-color: #b3261e;
+}
+
+.sensitive-state {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.error {
+  margin: 12px 0 0;
+  color: #b3261e;
+}
+
+.preview,
+.result {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.plan-class h4 {
+  margin: 12px 0 4px;
+  font-size: 13px;
+}
+
+.permission-names,
+.preview-objects,
+.preview-updates,
+.preview-deletes,
+.created-objects,
+.plan-warnings,
+.changes {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.permissions h3 {
+  margin: 16px 0 4px;
+  font-size: 13px;
+}

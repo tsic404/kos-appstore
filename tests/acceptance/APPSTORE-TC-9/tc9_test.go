@@ -6,8 +6,6 @@
 package appstoretc9
 
 import (
-	"context"
-	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -15,15 +13,12 @@ import (
 
 	"github.com/tsic404/kosd/api/v1beta1"
 	"github.com/tsic404/kosd/pkg/app"
-	"github.com/tsic404/kosd/pkg/catalogue"
 	"github.com/tsic404/kosd/pkg/extension"
-	"github.com/tsic404/kosd/pkg/identity"
-	"github.com/tsic404/kosd/pkg/write"
 	"github.com/tsic404/kosd/tests/acceptance/harness"
 
-	"github.com/tsic404/kos-appstore/appcenter"
 	appcatalogue "github.com/tsic404/kos-appstore/catalogue"
 	"github.com/tsic404/kos-appstore/declaration"
+	"github.com/tsic404/kos-appstore/tests/acceptance/support"
 )
 
 const (
@@ -40,8 +35,10 @@ const (
 // (APPSTORE-TC-9).
 func TestTC9CatalogueEntrySyncAndDigest(t *testing.T) {
 	cluster := harness.Start(t)
-	shell := cluster.StartShell(t)
+	configure, bind := support.Router(cluster, nil)
+	shell := cluster.StartShell(t, configure)
 	token := shell.SignInOwner(t, ownerName, ownerPass)
+	bind(shell)
 	artifacts := extension.MemoryArtifacts{}
 	installed := cluster.InstallPackageWith(t, "appstore", shipped(t), artifacts, shell.Retention())
 	shell.Use(installed)
@@ -91,7 +88,7 @@ func TestTC9CatalogueEntrySyncAndDigest(t *testing.T) {
 
 	// The page read lays the install form out of the same structure, so the
 	// window and the page show one entry (APPSTORE-C-31, KOSD-C-32).
-	offer := pageOffer(t, shell, installedDefinition)
+	offer := support.Offer(t, shell, token, installedDefinition)
 	fields, _ := offer["config"].([]any)
 	if len(fields) == 0 {
 		t.Fatalf("page offer = %v, want the generated install form", offer)
@@ -151,7 +148,7 @@ func TestTC9CatalogueEntrySyncAndDigest(t *testing.T) {
 
 	// The page read carries the catalogue's refusal unchanged: an entry that
 	// cannot be installed keeps its form and names why (APPSTORE-C-31).
-	refusedOffer := pageOffer(t, shell, installedDefinition)
+	refusedOffer := support.Offer(t, shell, token, installedDefinition)
 	if installable, _ := refusedOffer["installable"].(bool); installable {
 		t.Fatalf("page offer = %v, want the catalogue's refusal", refusedOffer)
 	}
@@ -170,8 +167,10 @@ func TestTC9CatalogueEntrySyncAndDigest(t *testing.T) {
 // forth (APPSTORE-C-24).
 func TestTC9CrossSourceEntryConflictKeepsOneDefinition(t *testing.T) {
 	cluster := harness.Start(t)
-	shell := cluster.StartShell(t)
+	configure, bind := support.Router(cluster, nil)
+	shell := cluster.StartShell(t, configure)
 	token := shell.SignInOwner(t, ownerName, ownerPass)
+	bind(shell)
 	artifacts := extension.MemoryArtifacts{}
 
 	installed := cluster.InstallPackageWith(t, "appstore", shipped(t), artifacts, shell.Retention())
@@ -236,27 +235,6 @@ func named(t *testing.T, entries []map[string]any, id string) map[string]any {
 	}
 	t.Fatalf("the catalogue lists no entry %q: %v", id, entries)
 	return nil
-}
-
-// pageOffer reads the app-center entries item through the page's reader, which
-// is the value the window renders.
-func pageOffer(t *testing.T, shell *harness.Shell, id string) map[string]any {
-	t.Helper()
-	reader := appcenter.NewReadings(catalogue.New(shell.Registry, shell.Cluster.Dynamic), nil)
-	reading, failure := reader.Read(context.Background(), identity.Session{Role: write.RoleMember},
-		extension.PageItem{ID: appcenter.EntriesItem, Reference: appcenter.EntriesRef})
-	if failure != nil {
-		t.Fatalf("read the app-center entries item: %v", failure)
-	}
-	encoded, err := json.Marshal(reading.Value)
-	if err != nil {
-		t.Fatalf("encode the entries item: %v", err)
-	}
-	var offers []map[string]any
-	if err := json.Unmarshal(encoded, &offers); err != nil {
-		t.Fatalf("decode the entries item: %v", err)
-	}
-	return named(t, offers, id)
 }
 
 // competing declares one catalogue source offering the shared entry identity
