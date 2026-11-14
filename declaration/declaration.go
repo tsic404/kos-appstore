@@ -21,8 +21,9 @@ import (
 
 // The package identity (KOSD-C-17).
 const (
-	// Identifier is the package identity across versions.
-	Identifier = "kos-appstore"
+	// Identifier is the package identity across versions. The page items route
+	// by the same identity, so the shell reaches this product's reader (KOSD-C-22).
+	Identifier = appcenter.Identifier
 	// Version is the package version.
 	Version = "1.0.0"
 	// FrameworkVersion is the framework range the package targets (KOSD-C-16).

@@ -7,8 +7,10 @@ package appcenter
 
 import (
 	"context"
+	"slices"
 	"time"
 
+	"github.com/tsic404/kos-sdk/manifest"
 	"github.com/tsic404/kosd/pkg/catalogue"
 	"github.com/tsic404/kosd/pkg/controlplane"
 	"github.com/tsic404/kosd/pkg/extension"
@@ -19,16 +21,21 @@ import (
 // Readings serves the app-center page over the catalogue domain.
 type Readings struct {
 	catalogue *catalogue.Service
-	now       func() time.Time
+	// apps are the window applications the offering package declares (KOSD-C-73).
+	// A permission set belongs to a declared application, so an entry with no
+	// declaration shows none (APPSTORE-C-77).
+	apps []manifest.AppManifest
+	now  func() time.Time
 }
 
-// NewReadings builds the page reader. now supplies the observation time; nil
-// reads the clock at request time.
-func NewReadings(service *catalogue.Service, now func() time.Time) Readings {
+// NewReadings builds the page reader. apps carries the window applications the
+// offering package declares; nil declares none. now supplies the observation
+// time; nil reads the clock at request time.
+func NewReadings(service *catalogue.Service, apps []manifest.AppManifest, now func() time.Time) Readings {
 	if now == nil {
 		now = time.Now
 	}
-	return Readings{catalogue: service, now: now}
+	return Readings{catalogue: service, apps: apps, now: now}
 }
 
 // offer is one catalogue entry as the app-center page renders it (APPSTORE-C-24,
@@ -43,6 +50,13 @@ type offer struct {
 	// fields generated from it; the catalogue API still serves that structure.
 	// encoding/json prefers this shallower field over the embedded one.
 	Config []pages.FormField `json:"config"`
+	// Permissions is the capability set the package declares for the window
+	// application this entry installs (APPSTORE-C-77, KOSD-C-73). The entry
+	// detail and the install confirmation render this one value: a permission the
+	// declaration omits never appears, and there is no grant entry to add it.
+	// Empty means the entry installs no window application or one that declares
+	// no capability.
+	Permissions []string `json:"permissions"`
 }
 
 // Read resolves one declared item of the app-center page. The session is not
@@ -65,15 +79,42 @@ func (r Readings) Read(ctx context.Context, _ identity.Session, item extension.P
 }
 
 // offers renders every catalogue entry with the install form its config
-// structure generates. An entry nothing offers stays out, and an empty catalogue
-// renders an empty list rather than a missing value.
+// structure generates and the permission set its declared application carries.
+// An entry nothing offers stays out, and an empty catalogue renders an empty
+// list rather than a missing value.
 func (r Readings) offers() []offer {
 	entries := r.catalogue.Entries()
 	offers := make([]offer, 0, len(entries))
 	for _, entry := range entries {
-		offers = append(offers, offer{Entry: entry, Config: pages.FormOf(entry.Config)})
+		offers = append(offers, offer{
+			Entry:       entry,
+			Config:      pages.FormOf(entry.Config),
+			Permissions: declaredPermissions(r.apps, entry.ID),
+		})
 	}
 	return offers
+}
+
+// declaredPermissions collects the capabilities the package declares for the
+// window application an entry installs (APPSTORE-C-77). The application is the
+// declared `App` of the entry's identity; duplicate names collapse and the
+// declaration order is kept, so the same declaration always renders one list.
+// The result is never nil: an entry without a declaration renders an empty set,
+// not a missing value.
+func declaredPermissions(apps []manifest.AppManifest, entryID string) []string {
+	permissions := []string{}
+	for _, app := range apps {
+		if app.ID != entryID {
+			continue
+		}
+		for _, permission := range app.Permissions {
+			name := string(permission)
+			if !slices.Contains(permissions, name) {
+				permissions = append(permissions, name)
+			}
+		}
+	}
+	return permissions
 }
 
 // unresolved names a page reference this reader does not serve.

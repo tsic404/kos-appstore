@@ -5,19 +5,16 @@
 package appstoretc10
 
 import (
-	"context"
-	"encoding/json"
 	"net/http"
 	"testing"
 
 	"github.com/tsic404/kosd/pkg/catalogue"
 	"github.com/tsic404/kosd/pkg/extension"
-	"github.com/tsic404/kosd/pkg/identity"
-	"github.com/tsic404/kosd/pkg/write"
 	"github.com/tsic404/kosd/tests/acceptance/harness"
 
 	"github.com/tsic404/kos-appstore/appcenter"
 	"github.com/tsic404/kos-appstore/declaration"
+	"github.com/tsic404/kos-appstore/tests/acceptance/support"
 )
 
 const (
@@ -34,8 +31,10 @@ const (
 // path names the missing source (APPSTORE-TC-10).
 func TestTC10SourceRemovalKeepsInstalledApplication(t *testing.T) {
 	cluster := harness.Start(t)
-	shell := cluster.StartShell(t)
+	configure, bind := support.Router(cluster, nil)
+	shell := cluster.StartShell(t, configure)
 	token := shell.SignInOwner(t, ownerName, ownerPass)
+	bind(shell)
 	artifacts := extension.MemoryArtifacts{}
 	installed := cluster.InstallPackageWith(t, component, shipped(t), artifacts, shell.Retention())
 	shell.Use(installed)
@@ -53,8 +52,16 @@ func TestTC10SourceRemovalKeepsInstalledApplication(t *testing.T) {
 	}
 	before := cluster.Get(t, "v1beta1", "Application", appName)
 
+	// While the source is installed, the page item the window renders carries
+	// the upgrade path of the installed application (APPSTORE-C-31).
+	if paths := support.Upgrades(t, shell, token); len(paths) != 1 {
+		t.Fatalf("page upgrade paths = %v, want the one installed application", paths)
+	}
+
 	// Removing the component withdraws the source: the entry and the page
-	// disappear and the definition is no longer offered.
+	// disappear and the definition is no longer offered. The upgrade judgement
+	// stays readable from the catalogue read model, which the gone page can no
+	// longer carry.
 	cluster.DeleteComponent(t, component)
 	shell.Use(cluster.ExtensionStateWith(t, artifacts, shell.Retention()))
 	shell.SyncCatalogue(t)
@@ -93,12 +100,6 @@ func TestTC10SourceRemovalKeepsInstalledApplication(t *testing.T) {
 	}
 	if name := harness.String(upgrades[0], "name"); name != appName {
 		t.Fatalf("upgrade application = %q, want %q", name, appName)
-	}
-
-	// The page item the window renders carries the same judgement: the upgrade
-	// path exists and names the missing source (APPSTORE-C-31).
-	if state := pageUpgradeState(t, shell); state != catalogue.UpgradeSourceMissing {
-		t.Fatalf("page upgrade state = %q, want %q", state, catalogue.UpgradeSourceMissing)
 	}
 
 	// Reinstalling goes through the channel that installed it: the same package
@@ -150,24 +151,11 @@ func pageListed(t *testing.T, shell *harness.Shell, token string) bool {
 	return false
 }
 
-// pageUpgradeState reads the app-center upgrades item through the page's reader
-// and returns the state of the first upgrade path.
-func pageUpgradeState(t *testing.T, shell *harness.Shell) string {
+// pageUpgradeState reads the served app-center upgrades value and returns the
+// state of the first upgrade path.
+func pageUpgradeState(t *testing.T, shell *harness.Shell, token string) string {
 	t.Helper()
-	reader := appcenter.NewReadings(catalogue.New(shell.Registry, shell.Cluster.Dynamic), nil)
-	reading, failure := reader.Read(context.Background(), identity.Session{Role: write.RoleMember},
-		extension.PageItem{ID: appcenter.UpgradesItem, Reference: appcenter.UpgradesRef})
-	if failure != nil {
-		t.Fatalf("read the app-center upgrades item: %v", failure)
-	}
-	encoded, err := json.Marshal(reading.Value)
-	if err != nil {
-		t.Fatalf("encode the upgrades item: %v", err)
-	}
-	var paths []map[string]any
-	if err := json.Unmarshal(encoded, &paths); err != nil {
-		t.Fatalf("decode the upgrades item: %v", err)
-	}
+	paths := support.Upgrades(t, shell, token)
 	if len(paths) != 1 {
 		t.Fatalf("page upgrade paths = %v, want the one installed application", paths)
 	}

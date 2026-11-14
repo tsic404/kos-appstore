@@ -12,6 +12,8 @@ import (
 	"github.com/tsic404/kosd/pkg/extension"
 	"github.com/tsic404/kosd/pkg/identity"
 	"github.com/tsic404/kosd/pkg/write"
+
+	"github.com/tsic404/kos-sdk/manifest"
 )
 
 // template renders one ConfigMap; the catalogue only requires a template.
@@ -113,7 +115,7 @@ func TestAppCenterLaysOutTheInstallFormFromTheStructure(t *testing.T) {
 			{ID: "gpu", Display: extension.CatalogueDisplay{Name: "GPU 任务"},
 				Definition: definitionWith(t, structure, []v1beta1.CapabilityRequirement{{Name: "compute.gpu", Version: "v1"}})},
 		},
-	}}}, nil), nil)
+	}}}, nil), nil, nil)
 
 	offers := entriesOf(t, reader)
 	if len(offers) != 2 {
@@ -158,10 +160,58 @@ func TestAppCenterLaysOutTheInstallFormFromTheStructure(t *testing.T) {
 	}
 }
 
+// TestAppCenterCarriesOnlyDeclaredPermissions checks the entry value both the
+// detail and the install confirmation render: an entry's permission set equals
+// the set its declared window application carries, an entry without a
+// declaration carries none, and a capability nothing declared never appears
+// (APPSTORE-C-77, KOSD-C-73).
+func TestAppCenterCarriesOnlyDeclaredPermissions(t *testing.T) {
+	apps := []manifest.AppManifest{
+		{ID: "notify", Permissions: []manifest.Permission{manifest.PermissionNotifications}},
+		{ID: "wiki", Permissions: []manifest.Permission{manifest.PermissionClipboardRead, manifest.PermissionClipboardRead}},
+		{ID: "unoffered", Permissions: []manifest.Permission{manifest.PermissionExternalLink}},
+	}
+	reader := NewReadings(catalogue.New(declarations{sources: []extension.CatalogueSource{{
+		ID:   "fixture-source",
+		Sync: "pull",
+		Entries: []extension.CatalogueEntry{
+			{ID: "notify", Display: extension.CatalogueDisplay{Name: "Notify"}, Definition: definitionWith(t, nil, nil)},
+			{ID: "wiki", Display: extension.CatalogueDisplay{Name: "Wiki"}, Definition: definitionWith(t, nil, nil)},
+			{ID: "plain", Display: extension.CatalogueDisplay{Name: "Plain"}, Definition: definitionWith(t, nil, nil)},
+		},
+	}}}, nil), apps, nil)
+
+	offers := entriesOf(t, reader)
+	want := map[string][]string{
+		"notify": {"notifications"},
+		"wiki":   {"clipboard-read"},
+		"plain":  {},
+	}
+	for id, expected := range want {
+		offer := offerNamed(t, offers, id)
+		listed, ok := offer["permissions"].([]any)
+		if !ok {
+			t.Fatalf("entry %s carries no permission list: %v", id, offer["permissions"])
+		}
+		got := make([]string, 0, len(listed))
+		for _, raw := range listed {
+			got = append(got, raw.(string))
+		}
+		if len(got) != len(expected) {
+			t.Fatalf("entry %s permissions = %v, want %v", id, got, expected)
+		}
+		for index := range expected {
+			if got[index] != expected[index] {
+				t.Fatalf("entry %s permissions = %v, want %v", id, got, expected)
+			}
+		}
+	}
+}
+
 // TestAppCenterShowsAnEmptyEntryListWithoutSources checks the empty state: with
 // no active source the page read answers with an empty list, not a null value.
 func TestAppCenterShowsAnEmptyEntryListWithoutSources(t *testing.T) {
-	offers := entriesOf(t, NewReadings(catalogue.New(declarations{}, nil), nil))
+	offers := entriesOf(t, NewReadings(catalogue.New(declarations{}, nil), nil, nil))
 	if offers == nil || len(offers) != 0 {
 		t.Fatalf("entries = %v, want an empty list", offers)
 	}
@@ -170,7 +220,7 @@ func TestAppCenterShowsAnEmptyEntryListWithoutSources(t *testing.T) {
 // TestAppCenterRejectsAnUndeclaredReference checks that a page reference the
 // reader does not serve fails the read instead of answering a made-up value.
 func TestAppCenterRejectsAnUndeclaredReference(t *testing.T) {
-	reader := NewReadings(catalogue.New(declarations{}, nil), nil)
+	reader := NewReadings(catalogue.New(declarations{}, nil), nil, nil)
 	_, failure := reader.Read(context.Background(), identity.Session{Role: write.RoleMember},
 		extension.PageItem{ID: "unknown", Reference: "catalogue/unknown"})
 	if failure == nil {
