@@ -8,6 +8,7 @@ import test from "node:test";
 
 import { createAppCenter } from "../../../assets/app.js";
 import {
+  appCenterPage,
   fakeDocument,
   fakeElement,
   fakeFetch,
@@ -17,7 +18,7 @@ import {
 } from "../../shell/harness.js";
 
 const consoleOrigin = "https://console.example.test";
-const entriesPath = consoleOrigin + "/api/v1/catalogue/entries";
+const pagePath = consoleOrigin + "/api/v1/pages/app-center";
 
 function address() {
   return (
@@ -32,6 +33,7 @@ function open(network) {
     entries: fakeElement("ul"),
     "entries-empty": fakeElement("p"),
     detail: fakeElement("div"),
+    install: fakeElement("div"),
   });
   const window = fakeWindow(address());
   const clock = fakeIntervals();
@@ -50,7 +52,7 @@ function open(network) {
 }
 
 test("来源移除后窗口不残留条目，空目录给出空状态", async () => {
-  const network = fakeFetch({ ["GET " + entriesPath]: { status: 200, body: { items: [] } } });
+  const network = fakeFetch({ ["GET " + pagePath]: { status: 200, body: appCenterPage([]) } });
   const { document } = open(network);
   await settle();
 

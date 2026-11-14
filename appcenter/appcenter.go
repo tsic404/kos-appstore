@@ -14,6 +14,10 @@ import (
 
 // The page and the write entries it offers (APPSTORE-C-31).
 const (
+	// Identifier is the package identity. Page item references start with it, so
+	// the shell's page router dispatches each item to this product's reader
+	// (KOSD-C-22, KOSD-C-53); the panel serves several products side by side.
+	Identifier = "kos-appstore"
 	// PageID names the app-center page.
 	PageID = "app-center"
 	// InstallAction and UpgradeAction are the page's write entries.
@@ -23,8 +27,8 @@ const (
 	EntriesItem  = "entries"
 	UpgradesItem = "upgrades"
 	// EntriesRef and UpgradesRef are the catalogue reads the items resolve.
-	EntriesRef  = "catalogue/entries"
-	UpgradesRef = "catalogue/upgrades"
+	EntriesRef  = Identifier + "/entries"
+	UpgradesRef = Identifier + "/upgrades"
 	// ApplicationPath is the control-plane write installing and upgrading.
 	ApplicationPath = "/api/v1/resources/Application"
 )
