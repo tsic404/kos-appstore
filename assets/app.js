@@ -1,9 +1,14 @@
-// App-center window: the application side of the KOSD-C-75 handshake and the
-// catalogue entries the app center shows (APPSTORE-C-31). An entry is the
-// install source, not an installed application: the list and the detail show
-// the entry's display information, version, dependencies, install parameter
-// structure, declared permission set and package digest, and installing it goes
-// through the page's install entry.
+// App-center window: the application side of the KOSD-C-75 handshake, the
+// catalogue entries the app center shows (APPSTORE-C-31) and the installed
+// applications with the upgrade the catalogue offers them (APPSTORE-C-78,
+// APPSTORE-C-79). An entry is the install source, not an installed application:
+// the entry list and its detail show display information, version, dependencies,
+// install parameter structure, declared permission set and package digest, and
+// installing it goes through the page's install entry. The installed list and
+// the upgrade entry render the reader's application projection unchanged: the
+// phase, health and conditions are the application object's (KOSD-C-33), the
+// target version and preview are the framework's (KOSD-C-34), and no
+// visibility, progress or update is judged here (APPSTORE-C-78, APPSTORE-C-80).
 //
 // The install form is laid out from the entry's config structure — the shell
 // never writes down an application field and never judges a value; the write
@@ -34,6 +39,13 @@ const PAGE_PATH = "/api/v1/pages/app-center";
 const PLAN_PATH = "/api/v1/plan-requests";
 // INSTALL_ACTION is the page action the entries item is installed through.
 const INSTALL_ACTION = "install";
+// INSTALLED_ITEM is the page item that carries the applications the reading
+// session may see with the update the catalogue offers each of them
+// (APPSTORE-C-78, APPSTORE-C-79); its entry names the upgrade write.
+const INSTALLED_ITEM = "installed";
+// MASKED_CONFIG is the value the read path serves in place of a sensitive config
+// value; it is never submitted back (KOSD-C-14, KOSD-C-32).
+const MASKED_CONFIG = "***";
 
 // The Application envelope every install writes. The config keys inside spec
 // come from the entry's structure; the envelope itself is the same for every
@@ -61,6 +73,10 @@ export function createAppCenter({
     selectedId: "",
     action: null,
     install: null,
+    installed: [],
+    selectedApplication: "",
+    upgradeAction: null,
+    upgradeRefusal: null,
   };
 
   const elements = {
@@ -69,9 +85,13 @@ export function createAppCenter({
     entriesEmpty: doc.getElementById("entries-empty"),
     detail: doc.getElementById("detail"),
     install: doc.getElementById("install"),
+    installed: doc.getElementById("installed"),
+    installedEmpty: doc.getElementById("installed-empty"),
+    application: doc.getElementById("application"),
   };
 
   const buttons = new Map();
+  const applicationButtons = new Map();
   let alive = 0;
 
   // start resolves the console from the frame address and opens the handshake.
@@ -112,7 +132,7 @@ export function createAppCenter({
       doc.documentElement.dataset.theme = data.theme;
     }
     armAlive();
-    void loadEntries();
+    void loadPage();
   }
 
   // armAlive reports the window as running for as long as the console listens;
@@ -132,12 +152,13 @@ export function createAppCenter({
     return message;
   }
 
-  // loadEntries reads the app-center page and takes the entries item's value:
-  // the entries as the reader generated them — the install form fields and the
-  // declared permission set — never a shape this module assembles itself
-  // (APPSTORE-C-31). The read carries the window token and no console cookie:
-  // the console session never reaches this origin (KOSD-C-75).
-  async function loadEntries() {
+  // loadPage reads the app-center page and takes the items the reader generated:
+  // the entries with their install form fields and declared permission set
+  // (APPSTORE-C-31), and the installed applications with their update
+  // (APPSTORE-C-78, APPSTORE-C-79). Neither shape is assembled here, and the
+  // read carries the window token and no console cookie: the console session
+  // never reaches this origin (KOSD-C-75).
+  async function loadPage() {
     setStatus("正在读取目录…");
     let response;
     try {
@@ -166,17 +187,25 @@ export function createAppCenter({
     }
     const items = body && Array.isArray(body.items) ? body.items : [];
     const item = items.find((candidate) => candidate && candidate.action === INSTALL_ACTION);
+    const installed = items.find((candidate) => candidate && candidate.id === INSTALLED_ITEM);
+    state.installed = installed && Array.isArray(installed.value) ? installed.value : [];
+    state.upgradeAction = installed && installed.entry && installed.entry.path ? installed.entry : null;
+    // A fresh page read is a new observation, so a refusal the window recorded
+    // on an earlier attempt is not carried over it.
+    state.upgradeRefusal = null;
     if (!item) {
       state.entries = [];
       state.action = null;
       renderEntries();
+      renderInstalled();
       setStatus("应用中心页没有安装入口", true);
       return;
     }
     state.entries = Array.isArray(item.value) ? item.value : [];
     state.action = item.entry && item.entry.path ? item.entry : null;
     renderEntries();
-    setStatus(`${state.entries.length} 个条目`);
+    renderInstalled();
+    setStatus(`${state.entries.length} 个条目 · ${state.installed.length} 个已安装应用`);
   }
 
   // failureText keeps the control plane's own reason readable instead of
@@ -279,6 +308,528 @@ export function createAppCenter({
     empty.className = "empty";
     empty.textContent = "选择一个条目查看版本、依赖、参数结构与摘要。";
     return empty;
+  }
+
+  // renderInstalled lays the installed applications out as the reader served
+  // them: the name, namespace, definition and the phase the object carries, and
+  // the update the catalogue offers it (APPSTORE-C-78, APPSTORE-C-79). The list
+  // is not filtered here — which application a session may see is the reader's
+  // judgement (KOSD-C-59) — and the update notice appears with the read, never
+  // behind a check action (APPSTORE-C-80).
+  function renderInstalled() {
+    elements.installed.replaceChildren();
+    applicationButtons.clear();
+    elements.installedEmpty.hidden = state.installed.length !== 0;
+    for (const application of state.installed) {
+      const item = doc.createElement("li");
+      const button = doc.createElement("button");
+      button.type = "button";
+      button.className = "entry";
+      button.dataset.id = application.name;
+
+      const name = doc.createElement("h3");
+      name.textContent = application.name || "—";
+      button.append(name);
+
+      const meta = doc.createElement("p");
+      meta.textContent = `${application.namespace || "—"} · ${application.definition || "—"} · 阶段 ${application.phase || "—"}`;
+      button.append(meta);
+
+      if (application.update && application.update.available) {
+        const notice = doc.createElement("p");
+        notice.className = "update-available";
+        notice.textContent = `更新可用：${application.update.version || "目标版本"}`;
+        button.append(notice);
+      }
+
+      button.addEventListener("click", () => selectApplication(application.name));
+      item.append(button);
+      elements.installed.append(item);
+      applicationButtons.set(application.name, button);
+    }
+    showApplication();
+  }
+
+  function selectApplication(name) {
+    state.selectedApplication = name;
+    showApplication();
+  }
+
+  // showApplication keeps the application panel on the selected application and
+  // drops it when the read no longer carries that application.
+  function showApplication() {
+    const application = state.installed.find((candidate) => candidate && candidate.name === state.selectedApplication);
+    for (const [name, button] of applicationButtons) {
+      button.setAttribute("aria-current", String(application !== undefined && name === application.name));
+    }
+    if (!application) {
+      state.selectedApplication = "";
+      elements.application.replaceChildren(applicationPlaceholder());
+      return;
+    }
+    elements.application.replaceChildren(...applicationNodes(application));
+  }
+
+  function applicationPlaceholder() {
+    const empty = doc.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "选择一个已安装应用查看阶段、目标版本与升级预览。";
+    return empty;
+  }
+
+  // applicationNodes shows one installed application from the served value: the
+  // application object's own phase, health and conditions (KOSD-C-33), the
+  // update the catalogue offers it, the framework's preview (KOSD-C-34) and the
+  // upgrade entry the page names. A refused preflight leaves the entry
+  // unavailable; there is no confirmation that bypasses it (APPSTORE-C-79).
+  function applicationNodes(application) {
+    const list = doc.createElement("dl");
+    const row = (label, value) => {
+      const term = doc.createElement("dt");
+      term.textContent = label;
+      const description = doc.createElement("dd");
+      description.append(value);
+      list.append(term, description);
+    };
+
+    row("名称", text(application.name || "—"));
+    row("命名空间", text(application.namespace || "—"));
+    row("定义", text(application.definition || "—"));
+    row("阶段", text(application.phase || "—"));
+    row("健康", text(application.health || "—"));
+    row("条件", conditionList(application.conditions));
+
+    const nodes = [list];
+    const update = application.update || {};
+    if (update.available) {
+      nodes.push(updateSection(update));
+    } else {
+      const note = doc.createElement("p");
+      note.className = "note";
+      note.textContent = "无可用更新。";
+      nodes.push(note);
+    }
+    if (update.preview) {
+      nodes.push(previewSection(update.preview));
+    }
+
+    const irreversible =
+      update.preview && Array.isArray(update.preview.irreversible) ? update.preview.irreversible : [];
+    if (irreversible.length > 0) {
+      nodes.push(refusalSection(irreversible));
+    } else if (state.upgradeRefusal && state.upgradeRefusal.application === application.name) {
+      nodes.push(sensitiveRefusal(state.upgradeRefusal.keys));
+    } else if (update.available && state.upgradeAction) {
+      const upgrade = doc.createElement("button");
+      upgrade.type = "button";
+      upgrade.className = "primary";
+      upgrade.textContent = `升级到 ${update.version || "目标版本"}`;
+      upgrade.addEventListener("click", () => void upgradeApplication(application));
+      nodes.push(upgrade);
+    }
+    return nodes;
+  }
+
+  // conditionList renders the conditions the application object carries; the
+  // window neither drops nor invents one (KOSD-C-33).
+  function conditionList(conditions) {
+    if (!Array.isArray(conditions) || conditions.length === 0) {
+      return text("无");
+    }
+    const list = doc.createElement("ul");
+    list.className = "conditions";
+    for (const condition of conditions) {
+      const item = doc.createElement("li");
+      const parts = [`${condition.type}: ${condition.status}`];
+      if (condition.reason) {
+        parts.push(condition.reason);
+      }
+      if (condition.message) {
+        parts.push(condition.message);
+      }
+      item.textContent = parts.join(" · ");
+      list.append(item);
+    }
+    return list;
+  }
+
+  // updateSection shows the target version and the package the application
+  // applied; the target is never presented as the installed version before the
+  // upgrade is confirmed (APPSTORE-C-79).
+  function updateSection(update) {
+    const section = doc.createElement("section");
+    section.className = "update";
+    const heading = doc.createElement("h3");
+    heading.textContent = "更新可用";
+    section.append(heading);
+    const list = doc.createElement("dl");
+    const row = (label, value) => {
+      const term = doc.createElement("dt");
+      term.textContent = label;
+      const description = doc.createElement("dd");
+      description.append(value);
+      list.append(term, description);
+    };
+    row("目标版本", text(update.version || "—"));
+    row("目标摘要", text(update.digest || "—"));
+    row("当前摘要", text(update.installedDigest || "—"));
+    section.append(list);
+    return section;
+  }
+
+  // previewSection presents the framework's preflight report unchanged: the
+  // target digest, the config and render differences, the irreversible items,
+  // the migrations and the rollback result (KOSD-C-34).
+  function previewSection(preview) {
+    const section = doc.createElement("section");
+    section.className = "preview";
+    const heading = doc.createElement("h3");
+    heading.textContent = "升级预览";
+    section.append(heading);
+    const list = doc.createElement("dl");
+    const row = (label, value) => {
+      const term = doc.createElement("dt");
+      term.textContent = label;
+      const description = doc.createElement("dd");
+      description.append(value);
+      list.append(term, description);
+    };
+    row("目标摘要", text(preview.target || "—"));
+    row("配置差异", configChangeList(preview.configChanges));
+    row("清单差异", renderChangeList(preview.renderChanges));
+    row("不可逆项", irreversibleList(preview.irreversible));
+    row("迁移对象", referenceList(preview.migrations));
+    row("已回滚", text(preview.rolledBack ? "是" : "否"));
+    section.append(list);
+    return section;
+  }
+
+  // configChangeList shows the fields the upgrade rewrites with the value the
+  // baseline held and the value the upgrade writes (KOSD-C-34).
+  function configChangeList(changes) {
+    if (!Array.isArray(changes) || changes.length === 0) {
+      return text("无");
+    }
+    const list = doc.createElement("ul");
+    list.className = "changes";
+    for (const change of changes) {
+      const item = doc.createElement("li");
+      item.textContent = `${change.field}: ${printable(change.from)} → ${printable(change.to)}`;
+      list.append(item);
+    }
+    return list;
+  }
+
+  // renderChangeList shows the manifests the upgrade creates, rewrites or drops
+  // and the field paths it changes (KOSD-C-34).
+  function renderChangeList(changes) {
+    if (!Array.isArray(changes) || changes.length === 0) {
+      return text("无");
+    }
+    const list = doc.createElement("ul");
+    list.className = "render-changes";
+    for (const change of changes) {
+      const item = doc.createElement("li");
+      item.textContent = `${change.operation} · ${referenceText(change.object)}`;
+      if (Array.isArray(change.fields) && change.fields.length > 0) {
+        const fields = doc.createElement("ul");
+        fields.className = "changes";
+        for (const path of change.fields) {
+          const field = doc.createElement("li");
+          field.textContent = path;
+          fields.append(field);
+        }
+        item.append(fields);
+      }
+      list.append(item);
+    }
+    return list;
+  }
+
+  // irreversibleList names the items the preflight refuses; the reason is the
+  // item's own kind and detail, never a rephrasing (KOSD-C-34).
+  function irreversibleList(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return text("无");
+    }
+    const list = doc.createElement("ul");
+    list.className = "irreversible-items";
+    for (const item of items) {
+      const entry = doc.createElement("li");
+      const parts = [item.kind || "不可逆项"];
+      if (item.detail) {
+        parts.push(item.detail);
+      }
+      if (item.object) {
+        parts.push(referenceText(item.object));
+      }
+      entry.textContent = parts.join(" · ");
+      list.append(entry);
+    }
+    return list;
+  }
+
+  function referenceList(references) {
+    if (!Array.isArray(references) || references.length === 0) {
+      return text("无");
+    }
+    const list = doc.createElement("ul");
+    list.className = "migrations";
+    for (const reference of references) {
+      const item = doc.createElement("li");
+      item.textContent = referenceText(reference);
+      list.append(item);
+    }
+    return list;
+  }
+
+  // refusalSection presents the refusal the preflight recorded. The surface
+  // offers no confirmation entry beside it: the refusal is the framework's and
+  // nothing here can bypass it (APPSTORE-C-79, KOSD-C-34).
+  function refusalSection(items) {
+    const section = doc.createElement("section");
+    section.className = "refusal";
+    const heading = doc.createElement("h3");
+    heading.textContent = "升级被拒绝";
+    section.append(heading);
+    for (const item of items) {
+      const line = doc.createElement("p");
+      line.className = "irreversible";
+      line.textContent = item.detail ? `${item.kind || "不可逆项"}：${item.detail}` : item.kind || "不可逆项";
+      section.append(line);
+    }
+    const note = doc.createElement("p");
+    note.className = "note";
+    note.textContent = "预检拒绝的升级没有确认入口，本窗口不提供绕过预检的路径。";
+    section.append(note);
+    return section;
+  }
+
+  // sensitiveRefusal presents the refusal this window decided: the stored spec
+  // holds a sensitive value the read does not return, so a write built from the
+  // read would drop it. The reason names the parameters and no submission is
+  // made (APPSTORE-C-81, KOSD-C-14).
+  function sensitiveRefusal(keys) {
+    const section = doc.createElement("section");
+    section.className = "refusal";
+    const heading = doc.createElement("h3");
+    heading.textContent = "升级被拒绝";
+    section.append(heading);
+    const line = doc.createElement("p");
+    line.className = "irreversible";
+    line.textContent = `敏感参数 ${keys.join("、")} 已设置且读取不回显：提交会丢失其取值，因此没有发出升级请求。`;
+    section.append(line);
+    const note = doc.createElement("p");
+    note.className = "note";
+    note.textContent = "该应用的确认入口在参数已设置时不提供，本窗口不提供绕过这条判断的路径。";
+    section.append(note);
+    return section;
+  }
+
+  // upgradeApplication requests the upgrade through the page's declared write:
+  // the application object read for its version and stored spec, with the
+  // target package's config (KOSD-C-32). The read is the write's precondition,
+  // and the page read afterwards is the only progress the window shows
+  // (KOSD-C-33).
+  async function upgradeApplication(application) {
+    const action = state.upgradeAction;
+    if (!action) {
+      setStatus("应用中心页没有升级入口", true);
+      return;
+    }
+    const name = application.name;
+    const namespace = application.namespace || DEFAULT_NAMESPACE;
+    const address = `${state.consoleOrigin}/api/v1/resources/Application/${encodeURIComponent(name)}?namespace=${encodeURIComponent(namespace)}`;
+    setStatus(`正在请求升级 ${name}…`);
+
+    let current;
+    try {
+      current = await read(address, {
+        headers: { Authorization: `Bearer ${state.token}` },
+        credentials: "omit",
+      });
+    } catch {
+      setStatus("无法连接控制面，请稍后重试", true);
+      return;
+    }
+    if (current.status === 401) {
+      setStatus("窗口令牌已失效，请重新打开应用", true);
+      return;
+    }
+    if (!current.ok) {
+      setStatus(await answerText(current), true);
+      return;
+    }
+    let body;
+    try {
+      body = await current.json();
+    } catch {
+      setStatus("读取应用失败：应答无法解析", true);
+      return;
+    }
+    const stored = body && body.object;
+    if (!stored || !stored.metadata) {
+      setStatus("读取应用失败：应答没有应用对象", true);
+      return;
+    }
+
+    const entry = state.entries.find((candidate) => candidate && candidate.definition === application.definition);
+    // A stored sensitive value is served masked and never read back, so a spec
+    // rebuilt from this read cannot carry it: submitting would delete it or let
+    // the framework fall back to a default (KOSD-C-14). The window refuses the
+    // write instead of guessing or resubmitting the mask (APPSTORE-C-81).
+    const setSensitive = collectSetSensitiveKeys(stored, entry);
+    if (setSensitive.length > 0) {
+      state.upgradeRefusal = { application: name, keys: setSensitive };
+      showApplication();
+      setStatus(
+        `升级未提交：敏感参数 ${setSensitive.join("、")} 已设置且读取不回显，提交会丢失其取值`,
+        true,
+      );
+      return;
+    }
+    let response;
+    try {
+      response = await read(`${state.consoleOrigin}${action.path}/${encodeURIComponent(name)}?namespace=${encodeURIComponent(namespace)}`, {
+        method: action.method || "PUT",
+        headers: { Authorization: `Bearer ${state.token}`, "Content-Type": "application/json" },
+        credentials: "omit",
+        body: JSON.stringify(upgradeManifest(stored, application, entry)),
+      });
+    } catch {
+      setStatus("无法连接控制面，请稍后重试", true);
+      return;
+    }
+    if (response.status === 401) {
+      setStatus("窗口令牌已失效，请重新打开应用", true);
+      return;
+    }
+    if (!response.ok) {
+      setStatus(await answerText(response), true);
+      return;
+    }
+
+    // The progress and the result are the reader's next page read; the window
+    // keeps no progress state of its own (KOSD-C-33).
+    await loadPage();
+    state.selectedApplication = name;
+    showApplication();
+    setStatus(`升级请求已提交：${name}`);
+  }
+
+  // collectSetSensitiveKeys returns the stored config keys the read served as a
+  // mask: each is set but never readable, so no write built from this read can
+  // keep it (KOSD-C-14). A key the target structure no longer declares counts
+  // too, because the write would drop it either way (KOSD-C-32).
+  function collectSetSensitiveKeys(stored, entry) {
+    const config = stored && stored.spec && stored.spec.config;
+    if (!config || typeof config !== "object") {
+      return [];
+    }
+    const declared = declaredFields(entry);
+    return Object.keys(config).filter((name) => isSetSensitive(name, config[name], declared));
+  }
+
+  // declaredFields indexes the target structure by field name. No structure at
+  // all is null, which leaves every key's mark unknown (KOSD-C-32).
+  function declaredFields(entry) {
+    if (!entry || !Array.isArray(entry.config)) {
+      return null;
+    }
+    return new Map(entry.config.map((field) => [field.name, field]));
+  }
+
+  // isSetSensitive reports whether one stored value is a mask this write cannot
+  // carry: a value the read replaced because the field is marked sensitive, or
+  // one whose mark is unknown. A declared non-sensitive field may hold the mask
+  // as its literal value (KOSD-C-14, KOSD-C-32).
+  function isSetSensitive(name, value, declared) {
+    if (value !== MASKED_CONFIG) {
+      return false;
+    }
+    if (!declared) {
+      return true;
+    }
+    const field = declared.get(name);
+    return !field || field.sensitive === true;
+  }
+
+  // upgradeManifest rewrites the client-owned spec with the target package's
+  // config: the stored values stay, a field the stored spec leaves out takes the
+  // target structure's declared default, and no value is invented for a
+  // sensitive field (KOSD-C-14, KOSD-C-32).
+  function upgradeManifest(stored, application, entry) {
+    const metadata = stored.metadata || {};
+    const spec = { ...(stored.spec || {}) };
+    const config = upgradeConfig(stored, entry);
+    if (Object.keys(config).length > 0) {
+      spec.config = config;
+    } else {
+      delete spec.config;
+    }
+    // A PUT replaces the whole object, so the stored labels and annotations are
+    // carried over rather than dropped (KOSD-C-02).
+    const carried = {
+      name: application.name,
+      namespace: metadata.namespace || application.namespace || DEFAULT_NAMESPACE,
+      resourceVersion: metadata.resourceVersion,
+    };
+    if (metadata.labels) {
+      carried.labels = metadata.labels;
+    }
+    if (metadata.annotations) {
+      carried.annotations = metadata.annotations;
+    }
+    return {
+      apiVersion: stored.apiVersion || APPLICATION_API_VERSION,
+      kind: stored.kind || APPLICATION_KIND,
+      metadata: carried,
+      spec,
+    };
+  }
+
+  function upgradeConfig(stored, entry) {
+    const current =
+      stored && stored.spec && stored.spec.config && typeof stored.spec.config === "object" ? stored.spec.config : {};
+    const declared = declaredFields(entry);
+    // The target structure is the only set of config keys the write may carry
+    // (KOSD-C-32): a key the new version no longer declares would be refused as
+    // unknown, so it is not resubmitted.
+    const config = {};
+    for (const [name, value] of Object.entries(current)) {
+      // The caller refuses a write whenever a set sensitive value is stored;
+      // this check only keeps a mask from ever leaving the window.
+      if (isSetSensitive(name, value, declared)) {
+        continue;
+      }
+      if (declared && !declared.has(name)) {
+        continue;
+      }
+      config[name] = value;
+    }
+    for (const field of declared ? [...declared.values()] : []) {
+      if (field.sensitive || Object.prototype.hasOwnProperty.call(config, field.name)) {
+        continue;
+      }
+      if (field.default === undefined || field.default === null) {
+        continue;
+      }
+      config[field.name] = declaredDefault(field);
+    }
+    return config;
+  }
+
+  // declaredDefault reads the textual default the structure declares as the
+  // value its control submits.
+  function declaredDefault(field) {
+    if (field.control === "switch") {
+      return String(field.default) === "true";
+    }
+    if (field.control === "number") {
+      const number = Number(field.default);
+      return Number.isNaN(number) ? field.default : number;
+    }
+    return field.default;
   }
 
   // renderDetail shows one entry from the app-center page value: display

@@ -229,6 +229,18 @@ export function buttonWith(root, text) {
   return elementsOf(root, "button").find((button) => button.textContent.includes(text)) || null;
 }
 
+// rowValue reads one labelled row of a panel's description list: the value of
+// the first <dd> that follows the <dt> carrying exactly that label. A case
+// asserts the label-to-value pairing the panel presents, not the markup order.
+export function rowValue(root, label) {
+  const term = elementsOf(root, "dt").find((candidate) => candidate.textContent.trim() === label);
+  if (!term || !term.parentNode) return null;
+  const siblings = term.parentNode.children;
+  const after = siblings.slice(siblings.indexOf(term) + 1);
+  const value = after.find((node) => node.tagName === "DD");
+  return value ? value.textContent.trim() : null;
+}
+
 // elementsWithClass collects every element carrying one class name.
 export function elementsWithClass(root, className) {
   const found = [];
@@ -250,10 +262,17 @@ export function fieldControl(root, name) {
 }
 
 // appCenterPage builds one rendered app-center page: the entries item carries
-// the offers the reader generated (form fields and declared permissions), and
-// the item's entry names the install write the confirmation submits
-// (APPSTORE-C-31, KOSD-C-62).
-export function appCenterPage(offers, install = { method: "POST", path: "/api/v1/resources/Application" }) {
+// the offers the reader generated (form fields and declared permissions), the
+// installed item carries the applications the reading session may see with the
+// update the catalogue offers each of them, and the upgrades item carries their
+// catalogue upgrade paths. Each item's entry names the write its action submits
+// (APPSTORE-C-31, APPSTORE-C-78, APPSTORE-C-79, KOSD-C-62).
+export function appCenterPage(
+  offers,
+  install = { method: "POST", path: "/api/v1/resources/Application" },
+  installed = [],
+  upgrades = [],
+) {
   const observedAt = "2026-11-13T10:00:00Z";
   return {
     id: "app-center",
@@ -274,10 +293,20 @@ export function appCenterPage(offers, install = { method: "POST", path: "/api/v1
         entry: { method: install.method, path: install.path },
       },
       {
+        id: "installed",
+        label: "已安装应用",
+        source: "computed",
+        value: installed,
+        observedAt,
+        stale: false,
+        action: "upgrade",
+        entry: { method: "PUT", path: "/api/v1/resources/Application" },
+      },
+      {
         id: "upgrades",
         label: "可升级应用",
         source: "computed",
-        value: [],
+        value: upgrades,
         observedAt,
         stale: false,
         action: "upgrade",

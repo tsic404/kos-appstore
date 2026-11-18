@@ -48,7 +48,10 @@ func Declaration() (extension.Declaration, error) {
 			Pages:            []extension.Page{appcenter.Page()},
 		},
 		Permissions: []extension.Permission{
-			{Contribution: appcenter.PageID, ReadScope: readScope(), RequiredRole: string(write.RoleMember)},
+			// The page admits every signed-in role: the application's visibility,
+			// not the reader's role, decides which applications it lists
+			// (APPSTORE-C-78, KOSD-C-59).
+			{Contribution: appcenter.PageID, ReadScope: readScope(), RequiredRole: string(write.RoleGuest)},
 			{Contribution: catalogue.SourceID, ReadScope: readScope()},
 		},
 	}, nil
@@ -80,8 +83,11 @@ func Manifest() (manifest.ExtensionManifest, error) {
 			Apps:           []manifest.AppManifest{appcenter.App(Version)},
 		},
 		Dependencies: manifest.Dependencies{Framework: FrameworkVersion},
-		Permissions:  manifest.ExtensionPermissions{Read: readScopes(), Roles: []string{string(write.RoleMember)}},
-		Config:       map[string]any{},
+		Permissions: manifest.ExtensionPermissions{
+			Read:  readScopes(),
+			Roles: []string{string(write.RoleOwner), string(write.RoleMember), string(write.RoleGuest)},
+		},
+		Config: map[string]any{},
 		Status: manifest.StatusDeclaration{
 			Component:     &manifest.ComponentStatus{Conditions: []string{}},
 			ObjectClasses: map[string]manifest.ObjectStatus{},

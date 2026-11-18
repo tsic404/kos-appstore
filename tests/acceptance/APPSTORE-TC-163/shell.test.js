@@ -83,7 +83,10 @@ async function open() {
     status: fakeElement("p"),
     entries: fakeElement("ul"),
     "entries-empty": fakeElement("p"),
+    installed: fakeElement("ul"),
+    "installed-empty": fakeElement("p"),
     detail: fakeElement("div"),
+    application: fakeElement("div"),
     install: fakeElement("div"),
   });
   const window = fakeWindow(address());

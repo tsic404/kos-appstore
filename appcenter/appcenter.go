@@ -9,7 +9,6 @@ import (
 
 	"github.com/tsic404/kos-sdk/manifest"
 	"github.com/tsic404/kosd/pkg/extension"
-	"github.com/tsic404/kosd/pkg/write"
 )
 
 // The page and the write entries it offers (APPSTORE-C-31).
@@ -23,12 +22,15 @@ const (
 	// InstallAction and UpgradeAction are the page's write entries.
 	InstallAction = "install"
 	UpgradeAction = "upgrade"
-	// EntriesItem and UpgradesItem are the two catalogue reads the page shows.
-	EntriesItem  = "entries"
-	UpgradesItem = "upgrades"
-	// EntriesRef and UpgradesRef are the catalogue reads the items resolve.
-	EntriesRef  = Identifier + "/entries"
-	UpgradesRef = Identifier + "/upgrades"
+	// EntriesItem and UpgradesItem are the catalogue reads the page shows;
+	// InstalledItem is the installed-application list the upgrade entry acts on.
+	EntriesItem   = "entries"
+	InstalledItem = "installed"
+	UpgradesItem  = "upgrades"
+	// EntriesRef, InstalledRef and UpgradesRef are the reads the items resolve.
+	EntriesRef   = Identifier + "/entries"
+	InstalledRef = Identifier + "/installed"
+	UpgradesRef  = Identifier + "/upgrades"
 	// ApplicationPath is the control-plane write installing and upgrading.
 	ApplicationPath = "/api/v1/resources/Application"
 )
@@ -47,17 +49,23 @@ const (
 )
 
 // Page returns the app-center page (APPSTORE-C-31): the catalogue entries with
-// the install entry and the upgrade paths with the upgrade entry. The install
-// parameters are not a fixed item: the config structure travels inside each
-// entry, and the page read lays the form fields out from it (KOSD-C-32).
+// the install entry, the installed applications with the upgrade entry and the
+// upgrade paths. The install parameters are not a fixed item: the config
+// structure travels inside each entry, and the page read lays the form fields
+// out from it (KOSD-C-32). The page admits every signed-in role, because which
+// applications appear is the application's visibility, not the reader's role
+// (KOSD-C-59, KOSD-F-8); every write an entry names is judged by the control
+// plane.
 func Page() extension.Page {
 	return extension.Page{
-		ID:           PageID,
-		Title:        "应用中心",
-		Location:     "panel",
-		RequiredRole: string(write.RoleMember),
+		ID:       PageID,
+		Title:    "应用中心",
+		Location: "panel",
+		// Empty admits every signed-in role (KOSD-C-59).
+		RequiredRole: "",
 		Items: []extension.PageItem{
 			{ID: EntriesItem, Label: "可安装应用", Source: extension.PageSourceComputed, Reference: EntriesRef, Action: InstallAction},
+			{ID: InstalledItem, Label: "已安装应用", Source: extension.PageSourceComputed, Reference: InstalledRef, Action: UpgradeAction},
 			{ID: UpgradesItem, Label: "可升级应用", Source: extension.PageSourceComputed, Reference: UpgradesRef, Action: UpgradeAction},
 		},
 		Actions: []extension.Action{
