@@ -25,7 +25,7 @@ import (
 // packages declare (KOSD-C-73); nil declares none.
 func Router(cluster *harness.Cluster, apps []manifest.AppManifest) (func(*pages.Config), func(*harness.Shell)) {
 	late := &declarations{}
-	reader := appcenter.NewReadings(catalogue.New(late, cluster.Dynamic), apps, nil)
+	reader := appcenter.NewReadings(catalogue.New(late, cluster.Dynamic), cluster.Dynamic, apps, nil)
 	configure := func(config *pages.Config) {
 		config.Readings = pages.Router{appcenter.Identifier: reader}
 	}
@@ -68,6 +68,13 @@ func Entries(t *testing.T, shell *harness.Shell, token string) []map[string]any 
 func Upgrades(t *testing.T, shell *harness.Shell, token string) []map[string]any {
 	t.Helper()
 	return itemValue(t, shell, token, appcenter.UpgradesItem)
+}
+
+// Installed reads the served app-center page and returns the installed item's
+// value as the window receives it.
+func Installed(t *testing.T, shell *harness.Shell, token string) []map[string]any {
+	t.Helper()
+	return itemValue(t, shell, token, appcenter.InstalledItem)
 }
 
 // Offer returns one entry inside the served entries value.

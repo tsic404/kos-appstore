@@ -115,7 +115,7 @@ func TestAppCenterLaysOutTheInstallFormFromTheStructure(t *testing.T) {
 			{ID: "gpu", Display: extension.CatalogueDisplay{Name: "GPU 任务"},
 				Definition: definitionWith(t, structure, []v1beta1.CapabilityRequirement{{Name: "compute.gpu", Version: "v1"}})},
 		},
-	}}}, nil), nil, nil)
+	}}}, nil), nil, nil, nil)
 
 	offers := entriesOf(t, reader)
 	if len(offers) != 2 {
@@ -179,7 +179,7 @@ func TestAppCenterCarriesOnlyDeclaredPermissions(t *testing.T) {
 			{ID: "wiki", Display: extension.CatalogueDisplay{Name: "Wiki"}, Definition: definitionWith(t, nil, nil)},
 			{ID: "plain", Display: extension.CatalogueDisplay{Name: "Plain"}, Definition: definitionWith(t, nil, nil)},
 		},
-	}}}, nil), apps, nil)
+	}}}, nil), nil, apps, nil)
 
 	offers := entriesOf(t, reader)
 	want := map[string][]string{
@@ -211,7 +211,7 @@ func TestAppCenterCarriesOnlyDeclaredPermissions(t *testing.T) {
 // TestAppCenterShowsAnEmptyEntryListWithoutSources checks the empty state: with
 // no active source the page read answers with an empty list, not a null value.
 func TestAppCenterShowsAnEmptyEntryListWithoutSources(t *testing.T) {
-	offers := entriesOf(t, NewReadings(catalogue.New(declarations{}, nil), nil, nil))
+	offers := entriesOf(t, NewReadings(catalogue.New(declarations{}, nil), nil, nil, nil))
 	if offers == nil || len(offers) != 0 {
 		t.Fatalf("entries = %v, want an empty list", offers)
 	}
@@ -220,7 +220,7 @@ func TestAppCenterShowsAnEmptyEntryListWithoutSources(t *testing.T) {
 // TestAppCenterRejectsAnUndeclaredReference checks that a page reference the
 // reader does not serve fails the read instead of answering a made-up value.
 func TestAppCenterRejectsAnUndeclaredReference(t *testing.T) {
-	reader := NewReadings(catalogue.New(declarations{}, nil), nil, nil)
+	reader := NewReadings(catalogue.New(declarations{}, nil), nil, nil, nil)
 	_, failure := reader.Read(context.Background(), identity.Session{Role: write.RoleMember},
 		extension.PageItem{ID: "unknown", Reference: "catalogue/unknown"})
 	if failure == nil {
@@ -228,5 +228,73 @@ func TestAppCenterRejectsAnUndeclaredReference(t *testing.T) {
 	}
 	if failure.Code != controlplane.CodeInternal {
 		t.Fatalf("failure = %+v, want the internal code for an unresolved reference", failure)
+	}
+}
+
+// TestUpdateOnlyAppearsWhileTheOfferedPackageDiffers checks the update-available
+// projection of APPSTORE-C-79 and APPSTORE-C-80: the offered package digest
+// decides whether an application is behind its entry, the target version and
+// digest are the entry's, and an application without an applied baseline or
+// without a catalogue entry carries no update.
+func TestUpdateOnlyAppearsWhileTheOfferedPackageDiffers(t *testing.T) {
+	entry := catalogue.Entry{ID: "web", Definition: "web", Version: "1.1.0", Digest: "sha256:new"}
+	application := v1beta1.Application{}
+	application.Status.Applied = &v1beta1.AppliedState{DefinitionDigest: "sha256:old"}
+
+	update := updateOf(application, entry, true)
+	if !update.Available || update.Version != "1.1.0" || update.Digest != "sha256:new" {
+		t.Fatalf("update = %+v, want the offered version and digest", update)
+	}
+	if update.InstalledDigest != "sha256:old" {
+		t.Fatalf("installed digest = %q, want the applied baseline", update.InstalledDigest)
+	}
+
+	same := updateOf(application, catalogue.Entry{Definition: "web", Version: "1.0.0", Digest: "sha256:old"}, true)
+	if same.Available || same.Version != "" || same.Digest != "" {
+		t.Fatalf("update = %+v, want none while the offered package is the applied one", same)
+	}
+
+	noBaseline := updateOf(v1beta1.Application{}, entry, true)
+	if noBaseline.Available || noBaseline.InstalledDigest != "" {
+		t.Fatalf("update = %+v, want none without an applied baseline", noBaseline)
+	}
+
+	notOffered := updateOf(application, catalogue.Entry{}, false)
+	if notOffered.Available {
+		t.Fatalf("update = %+v, want none without a catalogue entry", notOffered)
+	}
+}
+
+// TestPreviewIsTheFrameworkReport checks that the page presents the upgrade
+// preflight the framework wrote, including the changed config field and the
+// irreversible item, and renders empty lists rather than nulls (KOSD-C-34).
+func TestPreviewIsTheFrameworkReport(t *testing.T) {
+	if preview := previewOf(v1beta1.Application{}); preview != nil {
+		t.Fatalf("preview = %+v, want none without a preflight report", preview)
+	}
+
+	application := v1beta1.Application{}
+	application.Status.Upgrade = &v1beta1.UpgradeStatus{
+		Target: "sha256:new",
+		ConfigChanges: []v1beta1.ConfigChange{
+			{Field: "mode", From: `"one"`, To: `"two"`},
+		},
+		Irreversible: []v1beta1.IrreversibleItem{
+			{Kind: v1beta1.IrreversibleDataFormat, Detail: "the package starts declaring data format"},
+		},
+	}
+	preview := previewOf(application)
+	if preview == nil || preview.Target != "sha256:new" {
+		t.Fatalf("preview = %+v, want the framework's target", preview)
+	}
+	if len(preview.ConfigChanges) != 1 || preview.ConfigChanges[0].Field != "mode" ||
+		preview.ConfigChanges[0].From != `"one"` || preview.ConfigChanges[0].To != `"two"` {
+		t.Fatalf("config changes = %+v, want the changed default the framework reported", preview.ConfigChanges)
+	}
+	if len(preview.Irreversible) != 1 || preview.Irreversible[0].Kind != v1beta1.IrreversibleDataFormat {
+		t.Fatalf("irreversible = %+v, want the item the framework refused", preview.Irreversible)
+	}
+	if preview.RenderChanges == nil || preview.Migrations == nil {
+		t.Fatalf("preview = %+v, want empty lists rather than nulls", preview)
 	}
 }

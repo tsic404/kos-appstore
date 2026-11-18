@@ -9,9 +9,9 @@ import (
 	"github.com/tsic404/kosd/pkg/extension"
 )
 
-// TestPageCarriesTheInstallAndUpgradeEntries checks the app-center page: both
-// catalogue reads are shown, and each names the control-plane write that carries
-// it out (APPSTORE-C-31).
+// TestPageCarriesTheInstallAndUpgradeEntries checks the app-center page: the two
+// catalogue reads and the installed list the upgrade entry acts on are shown,
+// and each names the control-plane write that carries it out (APPSTORE-C-31).
 func TestPageCarriesTheInstallAndUpgradeEntries(t *testing.T) {
 	page := Page()
 	if page.ID != PageID || page.Title == "" || page.Location == "" {
@@ -19,6 +19,11 @@ func TestPageCarriesTheInstallAndUpgradeEntries(t *testing.T) {
 	}
 	if page.ReadOnly {
 		t.Fatalf("page = %+v, want a page with modification entries", page)
+	}
+	// Which applications appear is the application's visibility, not the
+	// reader's role, so the page admits every signed-in role (KOSD-C-59, KOSD-F-8).
+	if page.RequiredRole != "" {
+		t.Fatalf("page required role = %q, want every signed-in role", page.RequiredRole)
 	}
 	actions := map[string]extension.Action{}
 	for _, action := range page.Actions {
@@ -41,8 +46,9 @@ func TestPageCarriesTheInstallAndUpgradeEntries(t *testing.T) {
 		items[item.ID] = item
 	}
 	for itemID, actionID := range map[string]string{
-		EntriesItem:  InstallAction,
-		UpgradesItem: UpgradeAction,
+		EntriesItem:   InstallAction,
+		InstalledItem: UpgradeAction,
+		UpgradesItem:  UpgradeAction,
 	} {
 		item, found := items[itemID]
 		if !found {

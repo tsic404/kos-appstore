@@ -219,3 +219,60 @@ button.primary {
   margin: 16px 0 4px;
   font-size: 13px;
 }
+
+.application {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.application dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  margin: 0;
+}
+
+.application dt {
+  color: var(--muted);
+}
+
+.application dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.update,
+.refusal {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.update h3,
+.refusal h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.update-available {
+  margin: 0;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.conditions,
+.render-changes,
+.irreversible-items,
+.migrations {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.application button {
+  margin-top: 16px;
+}
+
+.refusal .irreversible {
+  margin: 0 0 4px;
+  color: #b3261e;
+}
